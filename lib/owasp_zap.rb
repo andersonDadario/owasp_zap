@@ -19,12 +19,13 @@ module OwaspZap
 
     class Zap
        attr_accessor :target,:base, :zap_bin
-
+       attr_reader :api_key
        def initialize(params = {})
             #TODO
             # handle params
             @base = params[:base] || "http://127.0.0.1:8080"
             @target = params[:target]
+            @api_key = params[:api_key]
             @zap_bin = params [:zap] || "#{ENV['HOME']}/ZAP/zap.sh"
             @output = params[:output] || $stdout #default we log everything to the stdout
         end
@@ -62,7 +63,7 @@ module OwaspZap
         def alerts
             OwaspZap::Alert.new(:base=>@base,:target=>@target)
         end
-        
+
         def scanner
             OwaspZap::Scanner.new(:base=>@base)
         end
@@ -78,24 +79,42 @@ module OwaspZap
 
         def auth
             OwaspZap::Auth.new(:base=>@base) 
+            #Zap::Auth.new(:base=>@base)
         end
 
         # TODO
         # DOCUMENT the step necessary: install ZAP under $home/ZAP or should be passed to new as :zap parameter
         def start(params = {})
-            cmd_line = if params.key? :daemon
-                "#{@zap_bin} -daemon"
-            else
-                @zap_bin
+            # default we are disabling api key
+            params = {api_key:false}.merge(params)
+            cmd_line = "#{@zap_bin}"
+            case
+            when params.key?(:daemon)
+              cmd_line += " -daemon"
+            when params.key?(:api_key)
+              cmd_line += if params[:api_key] == true
+                " -config api.key=#{@api_key}"
+              else
+                " -config api.disablekey=true"
+              end
+            end
+            if params.key?(:host)
+                cmd_line += " -host #{params[:host]}"
+            end
+            if params.key?(:port)
+                cmd_line += " -port #{params[:port]}"
             end
             fork do
                # if you passed :output=>"file.txt" to the constructor, then it will send the forked process output
                # to this file (that means, ZAP stdout)
                unless @output == $stdout
                 STDOUT.reopen(File.open(@output, 'w+'))
-                STDOUT.sync = true 
+                STDOUT.sync = true
                end
+               print "Running the following command: #{cmd_line} \n"
+
                exec cmd_line
+
             end
         end
 
@@ -105,11 +124,11 @@ module OwaspZap
         end
 
         #xml report
-        #maybe it should be refactored to alert. 
+        #maybe it should be refactored to alert.
         def xml_report
             RestClient::get "#{@base}/OTHER/core/other/xmlreport/"
         end
-        
+
         def html_report
             RestClient::get "#{@base}/OTHER/core/other/htmlreport/"
         end
